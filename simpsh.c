@@ -6,22 +6,22 @@
 #include "simpsh.h"
 
 // Pass pointers to fd array, size, and capacity.
-void add_fd(int newfd, int **p, int *psize, int *pcapacity) {
+int add_fd(int newfd, int **p, int *psize, int *pcapacity) {
 	if (*psize == *pcapacity) {
 		*pcapacity *= 2;
 		int *newp = realloc(*p, *pcapacity);
 		if (newp == NULL) {
 			fprintf(stderr, "Error calling realloc, proceeding to next option.\n");
-			return;
+			return 1;
 		}
 		*p = newp;
 	}
 	(*p)[*psize] = newfd;
 	(*psize)++;
+	return 0;
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 	// Capacity of fd array.
 	int fd_capacity = 8;
 	// Array of file descriptors.
@@ -33,6 +33,9 @@ int main(int argc, char *argv[])
 	// Number of file descriptors.
 	int fd_size = 0;
 
+	// Exit code.
+	int status = 0;
+	// Process option by option.
 	int opt;
 	while ((opt = getopt_long(argc, argv, "", options, NULL)) != -1) {
 		switch (opt) {
@@ -43,12 +46,30 @@ int main(int argc, char *argv[])
 				int newfd = open(optarg, oflag);
 				if (newfd == -1) {
 					fprintf(stderr, "Error opening file %s, proceeding to next option.\n", optarg);
+					if (status < 1) {
+						status = 1;
+					}
 					break;
 				}
-				add_fd(newfd, &fd, &fd_size, &fd_capacity);
+				int temp = add_fd(newfd, &fd, &fd_size, &fd_capacity);
+				if (temp == 1 && status < 1) {
+					status = 1;
+				}
 				break;
 			}
 		}
 	}
-	return 0;
+
+	// Close files/free.
+	for (int i = 0; i < fd_size; i++) {
+		if (close(fd[i]) == -1) {
+			fprintf(stderr, "Error closing file.\n");
+			if (status < 1) {
+				status = 1;
+			}
+		}
+	}
+	free(fd);
+
+	return status;
 }

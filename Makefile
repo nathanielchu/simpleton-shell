@@ -13,7 +13,7 @@ distname = lab1-NathanChouNathanielChu
 distfiles = simpsh.c simpsh.h Makefile test.sh README
 dist: $(distname).tar.gz
 $(distname).tar.gz: $(distfiles)
-	./testsh && tar -czf $@ --transform "s,^,$(distname)/," $(distfiles)
+	./test.sh && tar -czf $@ --transform "s,^,$(distname)/," $(distfiles)
 
 .PHONY: default clean check dist
 

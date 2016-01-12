@@ -50,9 +50,6 @@ int main(int argc, char *argv[]) {
 	// Number of file descriptors.
 	int fd_size = 0;
 
-	extern char *optarg;
-	extern int optind;
-
 	// Exit code.
 	int status = 0;
 	// Check for Verbose.
@@ -81,91 +78,101 @@ int main(int argc, char *argv[]) {
 			}
 			case SIMPSH_COMMAND:
 			{
-			    int cargs_capacity = 8;
-			  	int cargs_size = 0;
-			  	char **cargs = malloc(sizeof(char*) * cargs_capacity);
-			  	if (cargs == NULL) {
-					fprintf(stderr, "Error calling malloc on command %s, proceeding to next option.\n", optarg);
-			    	if (status < 1) {
-						status = 1;
+				char *cmd = argv[optind + 2];
+
+				int cargs_capacity = 8;
+				int cargs_size = 0;
+				char **cargs = malloc(sizeof(char*) * cargs_capacity);
+				// Whether or not parsing of cargs has been successful.
+				// We have to go through the arguments regardless to advance optind to the next option.
+				int cargs_failed = 0;
+				if (cargs == NULL) {
+					fprintf(stderr, "Error calling malloc for command %s, proceeding to next option.\n", cmd);
+					cargs_failed = 1;
+				}
+
+				// Parsing command arguments.
+				// Need to add the command itself as the first "argument".
+				int index = optind + 2;
+				while (index < argc && argv[index][0] != '\0' && !(argv[index][0] == '-' && argv[index][1] == '-')) {
+					if (!cargs_failed) {
+						int temp = add_cargs(argv[index], &cargs, &cargs_size, &cargs_capacity);
+						if (temp == 1) {
+							cargs_failed = 1;
+						}
 					}
-					free(cargs);
-					break;
-			  	}
-					
-			  	// Parsing command arguments.
-				int index = optind+3;
-				for(;;) {
-					if ((argv[index] == NULL) ||
-						(argv[index] == 0) ||
-						(argv[index][0] == '-' && argv[index][1] == '-'))
-						break;
-					
-					int temp = add_cargs(argv[index], &cargs, &cargs_size, &cargs_capacity);
-					if (temp == 1 && status < 1) {
-						status = 1;
-					}
+					// Regardless of cargs_failed we should increment index until we find the next option.
 					index++;
 				}
-									
-				
-				pid_t child_pid;
-				// Fork a child process.
-				if ((child_pid = fork()) < 0) {
-				  	fprintf(stderr, "Error forking child process on command %s, proceeding to next option.\n", optarg);
+				// Save index of the 3 I/O file "arguments".
+				int io_index = optind - 1;
+				// Advance optind to next long option.
+				optind = index;
+				// If there was a problem storing cargs, abort.
+				if (cargs_failed) {
 					if (status < 1) {
 						status = 1;
 					}
 					free(cargs);
 					break;
-			        }
+				}
+				// execvp needs last element to be NULL.
+				add_cargs(NULL, &cargs, &cargs_size, &cargs_capacity);
+
+
+				pid_t child_pid;
+				// Fork a child process.
+				if ((child_pid = fork()) < 0) {
+					fprintf(stderr, "Error forking child process on command %s, proceeding to next option.\n", cmd);
+					if (status < 1) {
+						status = 1;
+					}
+					free(cargs);
+					break;
+				}
+
 				// Execute command in the child process.
 				if(child_pid == 0) {
-					char *cmd = argv[optind + 2];
-
 					// Set command's standard io.		  
-					char *end;
 					long *io = malloc(sizeof(long) * 3);
 					for (int j = 0; j < 3; j++) {
-						const char *io_fd = argv[optind - 1 + j];
-						for (long i = strtol(io_fd, &end, 10); io_fd != end; i = strtol(io_fd, &end, 10)) {
-							io[j] = i;
-						}
-						
+						// Parse each file number.
+						io[j] = strtol(argv[io_index + j], NULL, 10);
+
 						char *msg;
 						switch(j) {
-						case 1:
-							msg = "input";
-							break;
-						case 2:
-							msg = "output";
-							break;
-						case 3:
-							msg = "error";
-							break;
+							case 0:
+								msg = "input";
+								break;
+							case 1:
+								msg = "output";
+								break;
+							case 2:
+								msg = "error";
+								break;
 						}  						
-						if ( (io[j] > fd_size) || (io[j] < 0) ) {
-							fprintf(stderr, "Error with standard %s for command %s, proceeding to next option.\n", msg, cmd);
-					  	if (status < 1) {
-							status = 1;
-					  	}
-						free(cargs);
-					  	break;
+						if ( (io[j] >= fd_size) || (io[j] < 0) ) {
+							fprintf(stderr, "Standard %s for command %s refers to invalid file, aborting command.\n", msg, cmd);
+							exit(1);
 						}
-						dup2(fd[io[j]], j);	
+						if (dup2(fd[io[j]], j) == -1) {
+							fprintf(stderr, "Error redirecting standard %s for command %s to file %d, aborting command.\n", msg, cmd, io[j]);
+							exit(1);
+						}
 					}
+
 					// Execute command.
-				    execvp( cmd, cargs);
+					execvp( cmd, cargs);
 				}
-				
+
 				free(cargs);
 				break;
 			}
 		        case SIMPSH_VERBOSE:
-				{
-					is_verbose = 1;
-					break;
-				}
+			{
+				is_verbose = 1;
+				break;
+			}
 
 		}
 		// Check for Verbose.

@@ -178,24 +178,21 @@ int main(int argc, char *argv[]) {
 		// Check for Verbose.
 		if (is_verbose == 1) {
 			int index = optind;
-			for(;;) {
-				if ((argv[index] == NULL) ||
-					(argv[index] == 0) ||
-					(argv[index][0] == '-' && argv[index][1] == '-')) {					
-					break;
-				}				
-				else {
-					index++;
-				}
+			while (index < argc &&
+				   !(argv[index] == NULL ||
+					 argv[index][0] == '\0' ||
+					 (argv[index][0] == '-' && argv[index][1] == '-'))) {
+				index++;
 			}
 			for(;;) {
-				if ((argv[index] == NULL) || (argv[index] == 0)) {					
+				if (index >= argc || argv[index] == NULL || argv[index][0] == '\0') {
 					break;
 				}
 				fprintf(stdout, "%s ", argv[index]);
 				index++;
-				if ((argv[index] == NULL) ||
-					(argv[index] == 0) ||
+				if (index >= argc ||
+					argv[index] == NULL ||
+					argv[index][0] == '\0' ||
 					(argv[index][0] == '-' && argv[index][1] == '-')) {
 					fprintf(stdout, "%c", '\n');
 					break;

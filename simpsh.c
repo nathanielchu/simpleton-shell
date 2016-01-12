@@ -80,6 +80,18 @@ int main(int argc, char *argv[]) {
 			{
 				char *cmd = argv[optind + 2];
 
+				int index = optind - 1;
+				for (int i = 0; i < 4; i++) {
+					if (index >= argc ||
+						argv[index] == NULL ||
+						argv[index][0] == '\0' ||
+						(argv[index][0] == '-' && argv[index][1] == '-')) {
+						fprintf(stderr, "--command option requires at least 4 arguments.\n");
+						exit(1);
+					}
+					index++;
+				}
+				
 				int cargs_capacity = 8;
 				int cargs_size = 0;
 				char **cargs = malloc(sizeof(char*) * cargs_capacity);
@@ -93,7 +105,7 @@ int main(int argc, char *argv[]) {
 
 				// Parsing command arguments.
 				// Need to add the command itself as the first "argument".
-				int index = optind + 2;
+				index = optind + 2;
 				while (index < argc && argv[index][0] != '\0' && !(argv[index][0] == '-' && argv[index][1] == '-')) {
 					if (!cargs_failed) {
 						int temp = add_cargs(argv[index], &cargs, &cargs_size, &cargs_capacity);

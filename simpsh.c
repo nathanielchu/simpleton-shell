@@ -165,7 +165,11 @@ int main(int argc, char *argv[]) {
 					}
 
 					// Execute command.
-					execvp( cmd, cargs);
+					if (execvp( cmd, cargs) == -1) {
+						if (status < 1) {
+							status = 1;
+						}
+					}
 				}
 
 				free(cargs);

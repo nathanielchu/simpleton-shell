@@ -79,5 +79,47 @@ should_succeed
 
 clean
 
+testname="--verbose working"
+touch testfile1.txt
+touch testfile2.txt
+run "--rdonly testfile1.txt --verbose --wronly testfile2.txt --command 0 1 1 cat"
+should_succeed
+grep -Fq -- "--wronly testfile2.txt" testout.txt
+should_succeed
+grep -Fq -- "--command 0 1 1 cat" testout.txt
+should_succeed
+
+clean
+
+testname="--commands after failing commands should succeed"
+touch testfile1.txt
+run "--wronly testfile1.txt --command 1 2 3 echo foo --command 0 0 0 echo foo"
+should_fail
+grep -q "foo" testfile1.txt
+should_succeed
+
+clean
+
+testname="path command can write to write only file"
+echo_path=$(which echo)
+touch testfile1.txt
+run "--wronly testfile1.txt --command 0 0 0 $echo_path foo"
+should_succeed
+grep -q "foo" testfile1.txt
+should_succeed
+
+clean
+
+testname="Shouldn't be able to write to read only file"
+touch testfile1.txt
+run "--rdonly testfile1.txt --command 0 0 0 echo foo"
+should_succeed
+grep -q "foo" testfile1.txt
+should_fail
+
+clean
+
+
+
 echo
 echo "Passed all test cases."

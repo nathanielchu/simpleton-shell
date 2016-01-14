@@ -18,4 +18,4 @@ $(distname).tar.gz: $(distfiles)
 .PHONY: default clean check dist
 
 clean:
-	rm -f *.tar.gz simpsh
+	rm -f *.tar.gz simpsh test*.txt

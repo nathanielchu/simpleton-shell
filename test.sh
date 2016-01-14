@@ -1,61 +1,83 @@
 #!/bin/bash
+# Based on Piazza post @8.
+
+testname=""
+
+function run() {
+	eval "./simpsh $1 >testout.txt 2>testerr.txt"
+}
 
 function should_fail() {
-	result=$?;
-
-	echo -n "==> $1 ";
-
-	if [ $result -lt 1 ]; then
-		echo "FAILURE";
-		exit 1;
+	if [ $? -lt 1 ]; then
+		echo "FAILED test: $testname."
+		clean
+		exit 1
 	fi
+	echo -n "."
 }
 
-function should_succeed(){
-	result=$?;
-
-	echo -n "==> $1 ";
-
-	if [ $result -gt 0 ]; then
-		echo "FAILURE";
-		exit 1;
+function should_succeed() {
+	if [ $? -gt 0 ]; then
+		echo "FAILED test: $testname."
+		clean
+		exit 1
 	fi
+	echo -n "."
 }
 
-testfile1=/test/test1
-testfile2=/test/test2
-testfile3=/test/test3
-testfile4=/test/test4
+function expect_error() {
+	grep -q -- "$1" testerr.txt
+	should_succeed
+}
 
-#Error opening files that don't exist
-./simpsh --rdonly cantpossiblyexist 2>&1 | grep "Error opening file cantpossiblyexist, proceeding to next option." > /dev/null
-should_succeed "1"
+function clean() {
+	rm -f test*.txt
+	echo
+}
 
-#No error opening existing files
-./simpsh --rdonly Makefile 2>&1 | grep "Error opening file Makefile, proceeding to next option." > /dev/null
-should_fail "2"
+testname="opening nonexistent file"
+run "--rdonly cantpossiblyexist"
+should_fail
+expect_error "Error opening file"
 
-#Error on invalid file descriptors
-./simpsh --command 1 2 3 echo "hi" 2>&1 | grep "Standard input for command echo refers to invalid file, aborting command." > /dev/null
-should_succeed "3"
+clean
 
-#Option mush have required arguemnts
-./simpsh --command 2>&1 | grep "./simpsh: option '--command' requires an argument" > /dev/null
-should_succeed "4"
+testname="opening existing file"
+run "--rdonly Makefile"
+should_succeed "opening existing file"
 
-#--command requires at least 4 arguments
-./simpsh --command 1 2 3 2>&1 | grep "command option requires at least 4 arguments." > /dev/null
-should_succeed "5"
+clean
 
+testname="invalid file descriptors for --command"
+run "--command 0 0 0 echo hi"
+should_fail
+expect_error "refers to undefined file"
 
+clean
 
+testname="no arguments for --command"
+run "--command"
+should_fail
+expect_error "requires an argument"
 
+clean
 
+testname="<4 arguments for --command"
+run "--command 1 2 3"
+should_fail
+expect_error "--command option requires at least 4 arguments"
 
+clean
 
+testname="--command working"
+echo "The Quick Brown Fox Jumps Over The Lazy Dog" > testfile1.txt
+touch testfile2.txt
+run "--rdonly testfile1.txt --wronly testfile2.txt --command 0 1 1 tr [:lower:] [:upper:]"
+should_succeed
+grep -Fq "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG" testfile2.txt
+should_succeed
 
+clean
 
-
-
-
+echo
 echo "Passed all test cases."

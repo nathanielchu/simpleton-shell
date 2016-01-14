@@ -31,7 +31,7 @@ int is_option_argument(char* arg) {
 int main(int argc, char *argv[]) {
 	// Capacity of fd array.
 	int fd_capacity = 8;
-	// Array of file descriptors.
+	// Array of file descriptors. -1 indicates a problem with that file.
 	int *fd = malloc(sizeof(int) * fd_capacity);
 	if (fd == NULL) {
 		fprintf(stderr, "Error calling malloc.\n");
@@ -49,38 +49,53 @@ int main(int argc, char *argv[]) {
 	while ((opt = getopt_long(argc, argv, "", options, NULL)) != -1) {
 		// Count number of arguments (anything not a long option) to this long option.
 		int nargs = 0;
-		// optarg is null when there were no arguments.
-		if (optarg != NULL) {
-			for (int i = optind - 1; is_option_argument(argv[i]); i++) {
-				nargs++;
-			}
+		// optarg is null when getopt consumed no arguments.
+		// Index of the current long option.
+		int base_index = optind - (optarg == NULL ? 1 : 2);
+		for (int i = base_index + 1; is_option_argument(argv[i]); i++) {
+			nargs++;
 		}
 		// Check for Verbose for next option.
 		if (is_verbose == 1) {
-			// Index of the current long option.
-			int index = optind - (nargs == 0 ? 1 : 2);
-			printf("%s", argv[index]);
+			printf("%s", argv[base_index]);
 			// Arguments.
 			for (int i = 1; i <= nargs; i++) {
-				printf(" %s", argv[index + i]);
+				printf(" %s", argv[base_index + i]);
 			}
 			printf("\n");
 			fflush(stdout);
 		}
 
 		switch (opt) {
+			// If getopt_long finds a missing argument (for instance) at the last option, just use its error message.
+			case '?': case ':':
+			{
+				if (status < 1) {
+					status = 1;
+				}
+				break;
+			}
 			case SIMPSH_RDONLY: case SIMPSH_WRONLY:
 			{
-				int oflag = (opt == SIMPSH_RDONLY) ? O_RDONLY : O_WRONLY;
-				// optarg is argument f indicating the file to open.
-				int newfd = open(optarg, oflag);
-				if (newfd == -1) {
-					fprintf(stderr, "Error opening file %s, proceeding to next option.\n", optarg);
-					if (status < 1) {
-						status = 1;
+				int newfd;
+				if (nargs == 0) {
+					fprintf(stderr, "No argument provided for file #%d.\n", fd_size);
+					newfd = -1;
+				} else {
+					int oflag = (opt == SIMPSH_RDONLY) ? O_RDONLY : O_WRONLY;
+					// optarg is argument f indicating the file to open.
+					if (nargs > 1) {
+						fprintf(stderr, "Too many arguments provided for file #%d, using first argument %s as file.\n", fd_size, optarg);
 					}
-					break;
+					newfd = open(optarg, oflag);
+					if (newfd == -1) {
+						fprintf(stderr, "Error opening file %s for file #%d.\n", optarg, fd_size);
+						if (status < 1) {
+							status = 1;
+						}
+					}
 				}
+				// Per Piazza @48, we will still add -1 fd as a logical fd.
 				if (add_fd(newfd, &fd, &fd_size, &fd_capacity) == 1 && status < 1) {
 					status = 1;
 				}
@@ -95,8 +110,24 @@ int main(int argc, char *argv[]) {
 					}
 					break;
 				}
-				
+
 				char *cmd = argv[optind + 2];
+
+				// Determine I/O files.
+				int iofile[3];
+				for (int i = 0; i < 3; i++) {
+					// Parse each file number, converting to int.
+					iofile[i] = strtol(argv[optind - 1 + i], NULL, 10);
+					if (iofile[i] >= fd_size || iofile[i] < 0 || fd[iofile[i]] == -1) {
+						fprintf(stderr, "Standard %s for command %s refers to undefined file, or there was a problem opening it; proceeding to next option.\n", ioname[i], cmd);
+						if (status < 1) {
+							status = 1;
+						}
+						// To break out of the switch, since break will only break out of the loop.
+						goto after_switch;
+					}
+				}
+				
 				// (nargs - 3 + 1) arguments since we don't include the 3 I/O arguments but add a NULL to the end.
 				int cargs_size = nargs - 3 + 1;
 				char **cargs = malloc(sizeof(char*) * cargs_size);
@@ -127,27 +158,8 @@ int main(int argc, char *argv[]) {
 				if(child_pid == 0) {
 					// Set command's standard io.		  
 					for (int j = 0; j < 3; j++) {
-						// Parse each file number, converting to int.
-						int fdnum = strtol(argv[optind - 1 + j], NULL, 10);
-
-						char *msg;
-						switch(j) {
-							case 0:
-								msg = "input";
-								break;
-							case 1:
-								msg = "output";
-								break;
-							case 2:
-								msg = "error";
-								break;
-						}  						
-						if (fdnum >= fd_size || fdnum < 0) {
-							fprintf(stderr, "Standard %s for command %s refers to invalid file, aborting command.\n", msg, cmd);
-							exit(1);
-						}
-						if (dup2(fd[fdnum], j) == -1) {
-							fprintf(stderr, "Error redirecting standard %s for command %s to file %d, aborting command.\n", msg, cmd, fdnum);
+						if (dup2(fd[iofile[j]], j) == -1) {
+							fprintf(stderr, "Error redirecting standard %s for command %s to file %d, aborting command.\n", ioname[j], cmd, iofile[j]);
 							exit(1);
 						}
 					}
@@ -162,11 +174,16 @@ int main(int argc, char *argv[]) {
 		        case SIMPSH_VERBOSE:
 			{
 				is_verbose = 1;
+				if (nargs > 0) {
+					fprintf(stderr, "Ignoring arguments to --verbose.\n");
+				}
 				break;
 			}
 
 		}
+after_switch:
 		// Advance optind to the next long option, silently ignoring extraneous short options/arguments.
+		// Extra options/arguments should have been checked in the switch already.
 		if (nargs > 1) {
 			optind += nargs - 1;
 		}
@@ -174,7 +191,7 @@ int main(int argc, char *argv[]) {
 		
 	// Close files/free.
 	for (int i = 0; i < fd_size; i++) {
-		if (close(fd[i]) == -1) {
+		if (fd[i] >= 0 && close(fd[i]) == -1) {
 			fprintf(stderr, "Error closing file.\n");
 			if (status < 1) {
 				status = 1;

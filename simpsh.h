@@ -10,3 +10,5 @@ const struct option options[] = {
 	{ "verbose", no_argument, NULL, SIMPSH_VERBOSE },
 	{ 0, 0, 0, 0 }
 };
+
+const char *ioname[] = { "input", "output", "error" };

@@ -166,6 +166,7 @@ int main(int argc, char *argv[]) {
 
 					// Execute command.
 					if (execvp( cmd, cargs) == -1) {
+						fprintf(stderr, "Error executing command %s, aborting command.\n", cmd);
 						if (status < 1) {
 							status = 1;
 						}
@@ -188,9 +189,7 @@ int main(int argc, char *argv[]) {
 after_switch:
 		// Advance optind to the next long option, silently ignoring extraneous short options/arguments.
 		// Extra options/arguments should have been checked in the switch already.
-		if (nargs > 1) {
-			optind += nargs - 1;
-		}
+		optind = base_index + nargs + 1;
 	}
 		
 	// Close files/free.

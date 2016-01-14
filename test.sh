@@ -113,6 +113,8 @@ clean
 testname="Shouldn't be able to write to read only file"
 touch testfile1.txt
 run "--rdonly testfile1.txt --command 0 0 0 echo foo"
+# The spec is ambiguous on whether or not simpsh considers this an error.
+# We interpret it as not an error since programs may not have any output.
 should_succeed
 grep -q "foo" testfile1.txt
 should_fail

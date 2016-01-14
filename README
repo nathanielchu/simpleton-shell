@@ -1,2 +1,14 @@
 Nathan Chou 104-453-049
 Nathaniel Chu 304-449-551
+
+test.sh may fail to run if it has CRLF line endings, although the copy we submitted should have LF line endings.
+
+It is possible to pass files opened with --rdonly as the standard output or error of a --command, or files opened with --wronly as the standard input of a --command. The spec is unclear and Piazza has no clarifications about this. We choose to make this not an error for simpsh, since the command may not have any output or input.
+
+All options to simpsh are assumed to be long options (beginning with two hyphens), and all options to programs executed by --command are assumed to be short options (beginning with one hyphen). All option arguments (e.g. file names) are assumed to not begin with two hyphens.
+
+argv is assumed to be terminated by a null pointer, as defined in the standard.
+
+When the last option passed to simpsh expects and is missing an argument, getopt_long will print out an error message. Other cases of missing or extra arguments are handled by our own code.
+
+The dynamically-allocated array of arguments passed to execvp is not freed by simpsh in the child process (unless execvp encountered a problem) since control is lost after execvp.

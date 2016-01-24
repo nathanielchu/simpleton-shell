@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -44,6 +45,8 @@ int main(int argc, char *argv[]) {
 	int status = 0;
 	// Check for Verbose.
 	int is_verbose = 0;
+	// Flags for next file to be opened.
+	int oflag = 0;
 	// Process option by option.
 	int opt;
 	while ((opt = getopt_long(argc, argv, "", options, NULL)) != -1) {
@@ -75,19 +78,32 @@ int main(int argc, char *argv[]) {
 				}
 				break;
 			}
-			case SIMPSH_RDONLY: case SIMPSH_WRONLY:
+			case SIMPSH_APPEND: oflag |= O_APPEND; break;
+			case SIMPSH_CLOEXEC: oflag |= O_CLOEXEC; break;
+			case SIMPSH_CREAT: oflag |= O_CREAT; break;
+			case SIMPSH_DIRECTORY: oflag |= O_DIRECTORY; break;
+			case SIMPSH_DSYNC: oflag |= O_DSYNC; break;
+			case SIMPSH_EXCL: oflag |= O_EXCL; break;
+			case SIMPSH_NOFOLLOW: oflag |= O_NOFOLLOW; break;
+			case SIMPSH_NONBLOCK: oflag |= O_NONBLOCK; break;
+			case SIMPSH_RSYNC: oflag |= O_RSYNC; break;
+			case SIMPSH_SYNC: oflag |= O_SYNC; break;
+			case SIMPSH_TRUNC: oflag |= O_TRUNC; break;
+			case SIMPSH_RDONLY: case SIMPSH_WRONLY: case SIMPSH_RDWR:
 			{
 				int newfd;
 				if (nargs == 0) {
 					fprintf(stderr, "No argument provided for file #%d.\n", fd_size);
 					newfd = -1;
 				} else {
-					int oflag = (opt == SIMPSH_RDONLY) ? O_RDONLY : O_WRONLY;
+					if (opt == SIMPSH_RDONLY) oflag |= O_RDONLY;
+					else if (opt == SIMPSH_WRONLY) oflag |= O_WRONLY;
+					else oflag |= O_RDWR;
 					// optarg is argument f indicating the file to open.
 					if (nargs > 1) {
 						fprintf(stderr, "Too many arguments provided for file #%d, using first argument %s as file.\n", fd_size, optarg);
 					}
-					newfd = open(optarg, oflag);
+					newfd = open(optarg, oflag, file_permissions);
 					if (newfd == -1) {
 						fprintf(stderr, "Error opening file %s for file #%d.\n", optarg, fd_size);
 						if (status < 1) {
@@ -99,6 +115,7 @@ int main(int argc, char *argv[]) {
 				if (add_fd(newfd, &fd, &fd_size, &fd_capacity) == 1 && status < 1) {
 					status = 1;
 				}
+				oflag = 0;
 				break;
 			}
 			case SIMPSH_COMMAND:

@@ -15,6 +15,8 @@
 #define SIMPSH_TRUNC 14
 #define SIMPSH_RDWR 15
 #define SIMPSH_PIPE 16
+#define SIMPSH_WAIT 17
+#define SIMPSH_CLOSE 18
 #include <getopt.h>
 #include <sys/stat.h>
 
@@ -36,6 +38,8 @@ const struct option options[] = {
 	{ "trunc", no_argument, NULL, SIMPSH_TRUNC },
 	{ "rdwr", required_argument, NULL, SIMPSH_RDWR },
 	{ "pipe", required_argument, NULL, SIMPSH_PIPE },
+	{ "wait", no_argument, NULL, SIMPSH_WAIT },
+	{ "close", required_argument, NULL, SIMPSH_CLOSE },
 	{ 0, 0, 0, 0 }
 };
 

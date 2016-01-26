@@ -1,11 +1,26 @@
 #define _POSIX_C_SOURCE 200809L
+#include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include "simpsh.h"
+
+typedef struct command {
+	// Array of argv elements.
+	char** cmdstr;
+	// Number of elements, including the command itself.
+	int length;
+
+	pid_t pid;
+} command;
+
+int max (int x, int y) {
+	return (x > y) ? x : y;
+}
 
 // Pass pointers to fd array, size, and capacity.
 int add_fd(int newfd, int **p, int *psize, int *pcapacity) {
@@ -21,6 +36,33 @@ int add_fd(int newfd, int **p, int *psize, int *pcapacity) {
 	(*p)[*psize] = newfd;
 	(*psize)++;
 	return 0;
+}
+
+int add_child(char **cmdstr, int length, pid_t pid,
+	command **p, int *psize, int *pcapacity) {
+	if (*psize == *pcapacity) {
+		*pcapacity *= 2;
+		command *newp = realloc(*p, sizeof(command) * *pcapacity);
+		if (newp == NULL) {
+			fprintf(stderr, "Error calling realloc.\n");
+			return 1;
+		}
+		*p = newp;
+	}
+	(*p)[*psize] = (command) { cmdstr, length, pid };
+	(*psize)++;
+	return 0;
+}
+
+int close_fds(int *fd, int fd_size) {
+	int ret = 0;
+	for (int i = 0; i < fd_size; i++) {
+		if (fd[i] >= 0 && close(fd[i]) == -1) {
+			fprintf(stderr, "Error closing file #%d.\n", i);
+			ret = 1;
+		}
+	}
+	return ret;
 }
 
 int is_option_argument(char* arg) {
@@ -40,6 +82,14 @@ int main(int argc, char *argv[]) {
 	}
 	// Number of file descriptors.
 	int fd_size = 0;
+
+	int child_capacity = 8;
+	command *child = malloc(sizeof(command) * child_capacity);
+	if (child == NULL) {
+		fprintf(stderr, "Error calling malloc.\n");
+		return 1;
+	}
+	int child_size = 0;
 
 	// Exit code.
 	int status = 0;
@@ -73,9 +123,7 @@ int main(int argc, char *argv[]) {
 			// If getopt_long finds a missing argument (for instance) at the last option, just use its error message.
 			case '?': case ':':
 			{
-				if (status < 1) {
-					status = 1;
-				}
+				status = max(status, 1);
 				break;
 			}
 			case SIMPSH_APPEND: oflag |= O_APPEND; break;
@@ -106,25 +154,32 @@ int main(int argc, char *argv[]) {
 					newfd = open(optarg, oflag, file_permissions);
 					if (newfd == -1) {
 						fprintf(stderr, "Error opening file %s for file #%d.\n", optarg, fd_size);
-						if (status < 1) {
-							status = 1;
-						}
+						status = max(status, 1);
 					}
 				}
 				// Per Piazza @48, we will still add -1 fd as a logical fd.
-				if (add_fd(newfd, &fd, &fd_size, &fd_capacity) == 1 && status < 1) {
-					status = 1;
-				}
+				status = max(status, add_fd(newfd, &fd, &fd_size, &fd_capacity));
 				oflag = 0;
+				break;
+			}
+			case SIMPSH_PIPE:
+			{
+				int newfd[2];
+				if (pipe(newfd) == -1) {
+					fprintf(stderr, "Error opening pipe.\n");
+					status = max(status, 1);
+					// Still add -1 fd's as logical fds.
+					newfd[0] = newfd[1] = -1;
+				}
+				status = max(status, add_fd(newfd[0], &fd, &fd_size, &fd_capacity));
+				status = max(status, add_fd(newfd[1], &fd, &fd_size, &fd_capacity));
 				break;
 			}
 			case SIMPSH_COMMAND:
 			{
 				if (nargs < 4) {
 					fprintf(stderr, "--command option requires at least 4 arguments, proceeding to next option.\n");
-					if (status < 1) {
-						status = 1;
-					}
+					status = max(status, 1);
 					break;
 				}
 
@@ -136,10 +191,8 @@ int main(int argc, char *argv[]) {
 					// Parse each file number, converting to int.
 					iofile[i] = strtol(argv[optind - 1 + i], NULL, 10);
 					if (iofile[i] >= fd_size || iofile[i] < 0 || fd[iofile[i]] == -1) {
-						fprintf(stderr, "Standard %s for command %s refers to undefined file, or there was a problem opening it; proceeding to next option.\n", ioname[i], cmd);
-						if (status < 1) {
-							status = 1;
-						}
+						fprintf(stderr, "Standard %s for command %s refers to undefined, closed, or problematic file; proceeding to next option.\n", ioname[i], cmd);
+						status = max(status, 1);
 						// To break out of the switch, since break will only break out of the loop.
 						goto after_switch;
 					}
@@ -150,9 +203,7 @@ int main(int argc, char *argv[]) {
 				char **cargs = malloc(sizeof(char*) * cargs_size);
 				if (cargs == NULL) {
 					fprintf(stderr, "Error calling malloc for command %s, proceeding to next option.\n", cmd);
-					if (status < 1) {
-						status = 1;
-					}
+					status = max(status, 1);
 					break;
 				}
 				// Copy arguments from argv, starting from the command itself, into cargs.
@@ -164,9 +215,7 @@ int main(int argc, char *argv[]) {
 				// Fork a child process.
 				if ((child_pid = fork()) < 0) {
 					fprintf(stderr, "Error forking child process on command %s, proceeding to next option.\n", cmd);
-					if (status < 1) {
-						status = 1;
-					}
+					status = max(status, 1);
 					free(cargs);
 					break;
 				}
@@ -181,16 +230,76 @@ int main(int argc, char *argv[]) {
 						}
 					}
 
+					// Close all file descriptors.
+					// The standard I/O descriptors still exist, so their descriptions will not disappear.
+					status = max(status, close_fds(fd, fd_size));
+
 					// Execute command.
 					if (execvp( cmd, cargs) == -1) {
 						fprintf(stderr, "Error executing command %s, aborting command.\n", cmd);
-						if (status < 1) {
-							status = 1;
-						}
+						status = max(status, 1);
 					}
+				} else {
+					// Pass pointer to the command/program in argv.
+					status = max(status, add_child(
+						argv + base_index + 4, nargs - 3, child_pid,
+						&child, &child_size, &child_capacity
+						));
 				}
 
 				free(cargs);
+				break;
+			}
+			case SIMPSH_WAIT:
+			{
+				while(1) {
+					int child_status;
+					pid_t pid = wait(&child_status);
+					if (pid == -1) {
+						if (errno != ECHILD) {
+							fprintf(stderr, "Wait interrupted before all child processes exited.\n");
+						}
+						break;
+					}
+					if (WIFEXITED(child_status)) {
+						printf("Exit status %d", WEXITSTATUS(child_status));
+						status = max(status, WEXITSTATUS(child_status));
+					} else if (WIFSIGNALED(child_status)) {
+						printf("Terminated by signal %d", WTERMSIG(child_status));
+					} else if (WIFSTOPPED(child_status)) {
+						printf("Stopped by signal %d", WSTOPSIG(child_status));
+					}
+					int i = 0;
+					while (i < child_size && child[i].pid != pid) {
+						i++;
+					}
+					if (i == child_size) {
+						printf(": unknown child process.\n");
+					} else {
+						printf(": process for `%s", child[i].cmdstr[0]);
+						for (int j = 1; j < child[i].length; j++) {
+							printf(" %s", child[i].cmdstr[j]);
+						}
+						printf("`\n");
+						// In case this pid is reused.
+						child[i].pid = -1;
+					}
+				}
+				break;
+			}
+			case SIMPSH_CLOSE:
+			{
+				int file = strtol(optarg, NULL, 10);
+				if (file >= fd_size || file < 0 || fd[file] == -1) {
+					fprintf(stderr, "File %d refers to undefined, closed, or problematic file; proceeding to next option.\n", file);
+					status = max(status, 1);
+				} else {
+					if (close(fd[file]) == -1) {
+						fprintf(stderr, "Error closing file %d.\n", file);
+					}
+					// Don't access this file again.
+					fd[file] = -1;
+				}
 				break;
 			}
 		        case SIMPSH_VERBOSE:
@@ -208,16 +317,8 @@ after_switch:
 		// Extra options/arguments should have been checked in the switch already.
 		optind = base_index + nargs + 1;
 	}
-		
-	// Close files/free.
-	for (int i = 0; i < fd_size; i++) {
-		if (fd[i] >= 0 && close(fd[i]) == -1) {
-			fprintf(stderr, "Error closing file.\n");
-			if (status < 1) {
-				status = 1;
-			}
-		}
-	}
+
+	status = max(status, close_fds(fd, fd_size));
 	free(fd);
 
 	return status;

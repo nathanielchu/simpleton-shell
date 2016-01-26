@@ -51,7 +51,7 @@ clean
 testname="invalid file descriptors for --command"
 run "--command 0 0 0 echo hi"
 should_fail
-expect_error "refers to undefined file"
+expect_error "refers to undefined, closed, or problematic file"
 
 clean
 

@@ -17,6 +17,11 @@
 #define SIMPSH_PIPE 16
 #define SIMPSH_WAIT 17
 #define SIMPSH_CLOSE 18
+#define SIMPSH_ABORT 19
+#define SIMPSH_CATCH 20
+#define SIMPSH_IGNORE 21
+#define SIMPSH_DEFAULT 22
+#define SIMPSH_PAUSE 23
 #include <getopt.h>
 #include <sys/stat.h>
 
@@ -40,9 +45,14 @@ const struct option options[] = {
 	{ "pipe", required_argument, NULL, SIMPSH_PIPE },
 	{ "wait", no_argument, NULL, SIMPSH_WAIT },
 	{ "close", required_argument, NULL, SIMPSH_CLOSE },
+	{ "abort", no_argument, NULL, SIMPSH_ABORT },
+	{ "catch", required_argument, NULL, SIMPSH_CATCH },
+	{ "ignore", required_argument, NULL, SIMPSH_IGNORE },
+	{ "pause", required_argument, NULL, SIMPSH_PAUSE },
 	{ 0, 0, 0, 0 }
 };
 
 const char *ioname[] = { "input", "output", "error" };
 
 const mode_t file_permissions = S_IRUSR | S_IWUSR;
+

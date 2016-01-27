@@ -1,11 +1,15 @@
 #define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
+#include <ucontext.h>
 #include <unistd.h>
 #include "simpsh.h"
 
@@ -69,6 +73,19 @@ int is_option_argument(char* arg) {
 	// If arg is null, then we've reached the end of the argv array.
 	// Otherwise make sure arg is empty or does not start with "--".
 	return arg != NULL && (arg[0] == '\0' || !(arg[0] == '-' && arg[1] == '-'));
+}
+
+void segfault_sigaction(int signal, siginfo_t *s, void *arg) {
+	exit(signal);
+}
+
+void catch_sigaction(int signal, siginfo_t *s, void *arg) {
+	fprintf(stderr, "Caught signal %d\n", signal);
+	exit(signal);
+}
+
+void pauseHandler(int signal, siginfo_t *s, void*arg) {
+	
 }
 
 int main(int argc, char *argv[]) {
@@ -310,7 +327,69 @@ int main(int argc, char *argv[]) {
 				}
 				break;
 			}
-
+		case SIMPSH_ABORT:
+		{
+			struct sigaction act;
+			act.sa_sigaction = &segfault_sigaction;
+			if (sigaction(SIGSEGV, &act, NULL) < 0) {
+				if (errno == EINVAL) {
+					fprintf(stderr, "Invalid signal number: %d\n", SIGSEGV);
+				}
+				status = max(status, 1);
+			}
+			int *a = NULL;
+			int b = *a; // violating instruction
+			fprintf(stdout, "a"); // testing
+			
+			break;
+		}
+		case SIMPSH_CATCH:
+		{
+			int signum = strtol(optarg, NULL, 10);
+			struct sigaction act;
+			act.sa_sigaction = &catch_sigaction;
+			if (sigaction(signum, &act, NULL) < 0) {
+				if (errno == EINVAL) {
+					fprintf(stderr, "Invalid signal number: %d\n", signum);
+				}
+				status = max(status, 1);
+			}
+			break;
+		}
+		case SIMPSH_IGNORE:
+		{
+			int signum = strtol(optarg, NULL, 10);
+			if (signal(signum, SIG_IGN) == SIG_ERR) {
+				if (errno == EINVAL) {
+					fprintf(stderr, "Invalid signal number: %d\n", signum);
+				}
+				status = max(status, 1);
+			}
+			break;
+		}
+		case SIMPSH_DEFAULT:
+		{
+			int signum = strtol(optarg, NULL, 10);
+			if (signal(signum, SIG_DFL) == SIG_ERR) {
+				if (errno == EINVAL) {
+					fprintf(stderr, "Invalid signal number: %d\n", signum);
+				}
+				status = max(status, 1);
+			}
+			break;
+		}
+		case SIMPSH_PAUSE:
+		{
+			// does pause need to change what the signal does?
+			/*
+			struct sigaction act;
+			act.sa_sigaction = &pauseHandler;
+			sigaction(SIGSEGV, &act, NULL);
+			*/
+			pause();
+			fprintf(stdout, "continue\n"); // testing
+			break;
+		}
 		}
 after_switch:
 		// Advance optind to the next long option, silently ignoring extraneous short options/arguments.

@@ -117,8 +117,7 @@ run "--rdonly testfile1.txt --command 0 0 0 echo foo"
 # The spec is ambiguous on whether or not simpsh considers this an error.
 # We interpret it as not an error since programs may not have any output.
 should_succeed
-grep -Fq "foo" testfile1.txt
-should_fail
+file_should_not_contain "foo" testfile1.txt
 
 clean
 

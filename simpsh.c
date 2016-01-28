@@ -7,8 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
-#include <sys/mman.h>
-#include <ucontext.h>
 #include <unistd.h>
 #include "simpsh.h"
 

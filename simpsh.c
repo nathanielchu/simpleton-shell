@@ -118,6 +118,8 @@ int main(int argc, char *argv[]) {
 	int oflag = 0;
 	// Process option by option.
 	int opt, options_index;
+	// Check for Ignore SIGSEGV.
+	int ignore_abort = 0;
 	while ((opt = getopt_long(argc, argv, "", options, &options_index)) != -1) {
 		// Count number of arguments (anything not a long option) to this long option.
 		int nargs = 0;
@@ -336,6 +338,9 @@ int main(int argc, char *argv[]) {
 			}
 			case SIMPSH_ABORT:
 			{
+				if (ignore_abort == 1) {
+					break;
+				}
 				int *a = NULL;
 				int b = *a; // violating instruction
 				fprintf(stderr, "simpsh should have aborted already!"); // testing
@@ -364,6 +369,9 @@ int main(int argc, char *argv[]) {
 						fprintf(stderr, "Invalid signal number: %d\n", signum);
 					}
 					status = max(status, 1);
+				}
+				if (signum == SIGSEGV) {
+					ignore_abort = 1;
 				}
 				break;
 			}

@@ -16,3 +16,5 @@ argv is assumed to be terminated by a null pointer, as defined in the standard.
 When the last option passed to simpsh expects and is missing an argument, getopt_long will print out an error message. Other cases of missing or extra arguments are handled by our own code.
 
 The dynamically-allocated array of arguments passed to execvp is not freed by simpsh in the child process (unless execvp encountered a problem) since control is lost after execvp.
+
+If the program is paused by the --pause option, a signal is being ignored due to the --ignore option, that signal cannot be used to wake up the program.

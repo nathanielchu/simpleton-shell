@@ -48,7 +48,8 @@ const struct option options[] = {
 	{ "abort", no_argument, NULL, SIMPSH_ABORT },
 	{ "catch", required_argument, NULL, SIMPSH_CATCH },
 	{ "ignore", required_argument, NULL, SIMPSH_IGNORE },
-	{ "pause", required_argument, NULL, SIMPSH_PAUSE },
+	{ "default", required_argument, NULL, SIMPSH_DEFAULT },
+	{ "pause", no_argument, NULL, SIMPSH_PAUSE },
 	{ 0, 0, 0, 0 }
 };
 

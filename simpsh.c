@@ -1,5 +1,4 @@
 #define _POSIX_C_SOURCE 200809L
-#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -75,17 +74,20 @@ int is_option_argument(char* arg) {
 	return arg != NULL && (arg[0] == '\0' || !(arg[0] == '-' && arg[1] == '-'));
 }
 
-void segfault_sigaction(int signal, siginfo_t *s, void *arg) {
-	exit(signal);
-}
-
-void catch_sigaction(int signal, siginfo_t *s, void *arg) {
-	fprintf(stderr, "Caught signal %d\n", signal);
-	exit(signal);
-}
-
-void pauseHandler(int signal, siginfo_t *s, void*arg) {
-	
+void catch_handler(int signal) {
+	// Technically shouldn't use fprintf, so we'll manually print.
+	char message[18 + 1] = "0123456789 caught\n";
+	// Replace with actual signal number.
+	int index = 9;
+	int temp = signal;
+	do {
+		message[index] = '0' + (temp % 10);
+		index--;
+		temp /= 10;
+	} while (temp != 0);
+	write(STDERR_FILENO, message + index + 1, 18 - index);
+	// Regular exit() is not safe in handlers.
+	_exit(signal);
 }
 
 int main(int argc, char *argv[]) {
@@ -115,8 +117,8 @@ int main(int argc, char *argv[]) {
 	// Flags for next file to be opened.
 	int oflag = 0;
 	// Process option by option.
-	int opt;
-	while ((opt = getopt_long(argc, argv, "", options, NULL)) != -1) {
+	int opt, options_index;
+	while ((opt = getopt_long(argc, argv, "", options, &options_index)) != -1) {
 		// Count number of arguments (anything not a long option) to this long option.
 		int nargs = 0;
 		// optarg is null when getopt consumed no arguments.
@@ -125,6 +127,7 @@ int main(int argc, char *argv[]) {
 		for (int i = base_index + 1; is_option_argument(argv[i]); i++) {
 			nargs++;
 		}
+
 		// Check for Verbose for next option.
 		if (is_verbose == 1) {
 			printf("%s", argv[base_index]);
@@ -134,6 +137,13 @@ int main(int argc, char *argv[]) {
 			}
 			printf("\n");
 			fflush(stdout);
+		}
+
+		if (opt != '?' && opt != ':' && (
+			(options[options_index].has_arg == no_argument && nargs > 0)
+			|| (options[options_index].has_arg == required_argument && opt != SIMPSH_COMMAND && nargs > 1))) {
+			// If required and no argument is provided, handle in switch.
+			fprintf(stderr, "Ignoring extra argument(s) for %s.\n", argv[base_index]);
 		}
 
 		switch (opt) {
@@ -165,9 +175,6 @@ int main(int argc, char *argv[]) {
 					else if (opt == SIMPSH_WRONLY) oflag |= O_WRONLY;
 					else oflag |= O_RDWR;
 					// optarg is argument f indicating the file to open.
-					if (nargs > 1) {
-						fprintf(stderr, "Too many arguments provided for file #%d, using first argument %s as file.\n", fd_size, optarg);
-					}
 					newfd = open(optarg, oflag, file_permissions);
 					if (newfd == -1) {
 						fprintf(stderr, "Error opening file %s for file #%d.\n", optarg, fd_size);
@@ -269,43 +276,46 @@ int main(int argc, char *argv[]) {
 			}
 			case SIMPSH_WAIT:
 			{
-				while(1) {
-					int child_status;
-					pid_t pid = wait(&child_status);
-					if (pid == -1) {
-						if (errno != ECHILD) {
-							fprintf(stderr, "Wait interrupted before all child processes exited.\n");
-						}
-						break;
-					}
+				int child_status;
+				pid_t pid;
+				while((pid = wait(&child_status)) != -1) {
 					if (WIFEXITED(child_status)) {
-						printf("Exit status %d", WEXITSTATUS(child_status));
+						printf("Exit status %d:", WEXITSTATUS(child_status));
 						status = max(status, WEXITSTATUS(child_status));
 					} else if (WIFSIGNALED(child_status)) {
-						printf("Terminated by signal %d", WTERMSIG(child_status));
+						printf("Terminated by signal %d:", WTERMSIG(child_status));
+						status = max(status, WTERMSIG(child_status));
 					} else if (WIFSTOPPED(child_status)) {
-						printf("Stopped by signal %d", WSTOPSIG(child_status));
+						printf("Stopped by signal %d:", WSTOPSIG(child_status));
+						status = max(status, WSTOPSIG(child_status));
 					}
 					int i = 0;
 					while (i < child_size && child[i].pid != pid) {
 						i++;
 					}
 					if (i == child_size) {
-						printf(": unknown child process.\n");
+						printf(" unknown child process.\n");
 					} else {
-						printf(": process for `%s", child[i].cmdstr[0]);
-						for (int j = 1; j < child[i].length; j++) {
+						for (int j = 0; j < child[i].length; j++) {
 							printf(" %s", child[i].cmdstr[j]);
 						}
-						printf("`\n");
+						printf("\n");
 						// In case this pid is reused.
 						child[i].pid = -1;
 					}
+				}
+				if (errno == EINTR) {
+					fprintf(stderr, "Wait interrupted before all child processes exited.\n");
 				}
 				break;
 			}
 			case SIMPSH_CLOSE:
 			{
+				if (nargs == 0) {
+					fprintf(stderr, "No argument provided for --close.\n");
+					break;
+				}
+
 				int file = strtol(optarg, NULL, 10);
 				if (file >= fd_size || file < 0 || fd[file] == -1) {
 					fprintf(stderr, "File %d refers to undefined, closed, or problematic file; proceeding to next option.\n", file);
@@ -322,74 +332,57 @@ int main(int argc, char *argv[]) {
 		        case SIMPSH_VERBOSE:
 			{
 				is_verbose = 1;
-				if (nargs > 0) {
-					fprintf(stderr, "Ignoring arguments to --verbose.\n");
+				break;
+			}
+			case SIMPSH_ABORT:
+			{
+				int *a = NULL;
+				int b = *a; // violating instruction
+				fprintf(stderr, "simpsh should have aborted already!"); // testing
+				break;
+			}
+			case SIMPSH_CATCH:
+			{
+				int signum = strtol(optarg, NULL, 10);
+				struct sigaction act;
+				act.sa_handler = &catch_handler;
+				sigemptyset(&act.sa_mask);
+				act.sa_flags = 0;
+				if (sigaction(signum, &act, NULL) == -1) {
+					if (errno == EINVAL) {
+						fprintf(stderr, "Invalid signal number: %d\n", signum);
+					}
+					status = max(status, 1);
 				}
 				break;
 			}
-		case SIMPSH_ABORT:
-		{
-			struct sigaction act;
-			act.sa_sigaction = &segfault_sigaction;
-			if (sigaction(SIGSEGV, &act, NULL) < 0) {
-				if (errno == EINVAL) {
-					fprintf(stderr, "Invalid signal number: %d\n", SIGSEGV);
+			case SIMPSH_IGNORE:
+			{
+				int signum = strtol(optarg, NULL, 10);
+				if (signal(signum, SIG_IGN) == SIG_ERR) {
+					if (errno == EINVAL) {
+						fprintf(stderr, "Invalid signal number: %d\n", signum);
+					}
+					status = max(status, 1);
 				}
-				status = max(status, 1);
+				break;
 			}
-			int *a = NULL;
-			int b = *a; // violating instruction
-			fprintf(stdout, "a"); // testing
-			
-			break;
-		}
-		case SIMPSH_CATCH:
-		{
-			int signum = strtol(optarg, NULL, 10);
-			struct sigaction act;
-			act.sa_sigaction = &catch_sigaction;
-			if (sigaction(signum, &act, NULL) < 0) {
-				if (errno == EINVAL) {
-					fprintf(stderr, "Invalid signal number: %d\n", signum);
+			case SIMPSH_DEFAULT:
+			{
+				int signum = strtol(optarg, NULL, 10);
+				if (signal(signum, SIG_DFL) == SIG_ERR) {
+					if (errno == EINVAL) {
+						fprintf(stderr, "Invalid signal number: %d\n", signum);
+					}
+					status = max(status, 1);
 				}
-				status = max(status, 1);
+				break;
 			}
-			break;
-		}
-		case SIMPSH_IGNORE:
-		{
-			int signum = strtol(optarg, NULL, 10);
-			if (signal(signum, SIG_IGN) == SIG_ERR) {
-				if (errno == EINVAL) {
-					fprintf(stderr, "Invalid signal number: %d\n", signum);
-				}
-				status = max(status, 1);
+			case SIMPSH_PAUSE:
+			{
+				pause();
+				break;
 			}
-			break;
-		}
-		case SIMPSH_DEFAULT:
-		{
-			int signum = strtol(optarg, NULL, 10);
-			if (signal(signum, SIG_DFL) == SIG_ERR) {
-				if (errno == EINVAL) {
-					fprintf(stderr, "Invalid signal number: %d\n", signum);
-				}
-				status = max(status, 1);
-			}
-			break;
-		}
-		case SIMPSH_PAUSE:
-		{
-			// does pause need to change what the signal does?
-			/*
-			struct sigaction act;
-			act.sa_sigaction = &pauseHandler;
-			sigaction(SIGSEGV, &act, NULL);
-			*/
-			pause();
-			fprintf(stdout, "continue\n"); // testing
-			break;
-		}
 		}
 after_switch:
 		// Advance optind to the next long option, silently ignoring extraneous short options/arguments.

@@ -387,10 +387,10 @@ int main(int argc, char *argv[]) {
 					}
 					status = max(status, 1);
 				}
-				break;
 				if (signum == SIGSEGV) {
 					ignore_abort = 0;
 				}
+				break;
 			}
 			case SIMPSH_PAUSE:
 			{

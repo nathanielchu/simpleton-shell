@@ -5,7 +5,7 @@ test.sh may fail to run if it has CRLF line endings, although the copy we submit
 
 We assume the user will properly close pipes, and do not have special handling of the infinite waiting problem with pipes.
 
-SIGSEGV is not handled in any special way when ignored (i.e. when --ignore 11 is given as an option). But after ignoring SIGSEGV, the faulty instruction will execute again and cause a segfault, making it appear as though SIGSEGV was not ignored. Thus simpsh --ignore 11 --abort will still cause a segfault and crash.
+When SIGSEGV is ignored, a flag is set to prevent --abort from aborting. Other segfaults are not specially handled, but there should not be any other causes of segfaults besides --abort.
 
 It is possible to pass files opened with --rdonly as the standard output/error of a --command, or files opened with --wronly as the standard input of a --command. The spec is unclear and Piazza has no clarifications about this. We choose to make this not an error for simpsh, since the command may not have any output or input.
 

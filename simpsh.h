@@ -22,6 +22,7 @@
 #define SIMPSH_IGNORE 21
 #define SIMPSH_DEFAULT 22
 #define SIMPSH_PAUSE 23
+#define SIMPSH_PROFILE 24
 #include <getopt.h>
 #include <sys/stat.h>
 
@@ -50,6 +51,7 @@ const struct option options[] = {
 	{ "ignore", required_argument, NULL, SIMPSH_IGNORE },
 	{ "default", required_argument, NULL, SIMPSH_DEFAULT },
 	{ "pause", no_argument, NULL, SIMPSH_PAUSE },
+	{ "profile", no_argument, NULL, SIMPSH_PROFILE },
 	{ 0, 0, 0, 0 }
 };
 

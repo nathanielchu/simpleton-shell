@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "simpsh.h"
@@ -88,6 +90,14 @@ void catch_handler(int signal) {
 	_exit(signal);
 }
 
+void print_rusage(struct rusage start, struct rusage end) {
+	int user_sec = end.ru_utime.tv_sec - start.ru_utime.tv_sec;
+	int user_usec = end.ru_utime.tv_usec - start.ru_utime.tv_usec;
+	int system_sec = end.ru_stime.tv_sec - start.ru_stime.tv_sec;
+	int system_usec = end.ru_stime.tv_usec - start.ru_stime.tv_usec;
+	printf("User: %ds %dus\nSystem: %ds %dus\n", user_sec, user_usec, system_sec, system_usec);
+}
+
 int main(int argc, char *argv[]) {
 	// Capacity of fd array.
 	int fd_capacity = 8;
@@ -118,6 +128,8 @@ int main(int argc, char *argv[]) {
 	int opt, options_index;
 	// Check for Ignore SIGSEGV.
 	int ignore_abort = 0;
+	// Check profiling.
+	int is_profiling = 0;
 	while ((opt = getopt_long(argc, argv, "", options, &options_index)) != -1) {
 		// Count number of arguments (anything not a long option) to this long option.
 		int nargs = 0;
@@ -138,6 +150,10 @@ int main(int argc, char *argv[]) {
 			printf("\n");
 			fflush(stdout);
 		}
+
+		// Profiling data.
+		struct rusage usage_start;
+		getrusage(RUSAGE_SELF, &usage_start);
 
 		if (opt != '?' && opt != ':' && (
 			(options[options_index].has_arg == no_argument && nargs > 0)
@@ -276,6 +292,9 @@ int main(int argc, char *argv[]) {
 			}
 			case SIMPSH_WAIT:
 			{
+				struct rusage childusage_start;
+				getrusage(RUSAGE_CHILDREN, &childusage_start);
+
 				int child_status;
 				pid_t pid;
 				while((pid = wait(&child_status)) != -1) {
@@ -307,6 +326,13 @@ int main(int argc, char *argv[]) {
 				if (errno == EINTR) {
 					fprintf(stderr, "Wait interrupted before all child processes exited.\n");
 				}
+
+				struct rusage childusage_end;
+				getrusage(RUSAGE_CHILDREN, &childusage_end);
+				if (is_profiling) {
+					printf("Time for newly-reaped children\n");
+					print_rusage(childusage_start, childusage_end);
+				}
 				break;
 			}
 			case SIMPSH_CLOSE:
@@ -332,6 +358,11 @@ int main(int argc, char *argv[]) {
 		        case SIMPSH_VERBOSE:
 			{
 				is_verbose = 1;
+				break;
+			}
+			case SIMPSH_PROFILE:
+			{
+				is_profiling = 1;
 				break;
 			}
 			case SIMPSH_ABORT:
@@ -400,6 +431,13 @@ after_switch:
 		// Advance optind to the next long option, silently ignoring extraneous short options/arguments.
 		// Extra options/arguments should have been checked in the switch already.
 		optind = base_index + nargs + 1;
+
+		struct rusage usage_end;
+		getrusage(RUSAGE_SELF, &usage_end);
+		if (is_profiling) {
+			printf("Time for %s\n", argv[base_index]);
+			print_rusage(usage_start, usage_end);
+		}
 	}
 
 	status = max(status, close_fds(fd, fd_size));

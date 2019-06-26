@@ -1,8 +1,12 @@
 # Simpleton Shell
 
-Simpsh SIMPleton SHell is a simple stripped down shell. Instead of a scripting language, developers invoke the simpsh command by passing it arguments telling it which files to access, which pipes to create, and which subcommands to invoke. It then creates or accesses all the files and creates all the pipes processes needed to run the subcommands, and reports the processe's exit status as they exit.
+Simsh SIMPleton SHell is a simple stripped down shell.
 
-## Options
+## Overview
+
+Simpsh SIMPleton SHell is a simple stripped down shell that creates arbitrary directed graphs of prcesses connected via pipes. Instead of a scripting language, developers invoke the simpsh command by passing it arguments telling it which files to access, which pipes to create, and which subcommands to invoke. It then creates or accesses all the files and creates all the pipes processes needed to run the subcommands, and reports the processe's exit status as they exit.
+
+## Features
 
 Here is a detailed list of the command-line options that simpsh should support. Each option should be executed in sequence, left to right.
 
@@ -79,3 +83,68 @@ Finally, there are some miscellaneous options:
 When there is a syntax error in an option (e.g., a missing operand), or where a file cannot be opened, or where is some other error in a system call, simpsh should report a diagnostic to standard error and should continue to the next option. However, simpsh should ignore any write errors to standard error, so that it does not get into an infinite loop outputting write-error diagnostics.
 
 When simpsh exits other than in response to a signal, it should exit with status equal to the maximum of all the exit statuses of all the subcommands that it ran and successfully waited for. However, if there are no such subcommands, or if the maximum is zero, simpsh should exit with status 0 if all options succeeded, and with status 1 one of them failed. For example, if a file could not be opened, simpsh must exit with nonzero status.
+
+## Installation
+
+```shell
+make
+```
+
+Builds the `simpsh` program.
+
+## Developing
+
+```shell
+make check
+```
+
+Runs the test suite.
+
+```shell
+make dist
+```
+
+Makes a software distribution compressed tarball and does simple testing on it.
+
+## Usage
+
+Run `simpsh` in the standard shell using stanard shell syntax.
+
+```shell
+simpsh \
+  --rdonly a \
+  --pipe \
+  --pipe \
+  --creat --trunc --wronly c \
+  --creat --append --wronly d \
+  --command 3 5 6 tr A-Z a-z \
+  --command 0 2 6 sort \
+  --command 1 4 6 cat b - \
+  --wait
+```
+
+This example invocation creates seven file descriptors:
+
+1. A read only descriptor for the file a, created by the --rdonly option.
+2. The read end of the first pipe, created by the first --pipe option.
+3. The write end of the first pipe, also created by the first --pipe option.
+4. The read end of the second pipe, created by the second --pipe option.
+5. The write end of the second pipe, also created by the second --pipe option.
+6. A write only descriptor for the file c, created by the first --wronly option as modified by the preceding --creat and --trunc.
+7. A write only, append only descriptor for the file d, created by the --wronly option as modified by the preceding --creat and --append options.
+
+It then creates three subprocesses:
+
+1. A subprocess with standard input, standard output, and standard error being the file descriptors numbered 0, 2, and 6 above, respectively. This subprocess runs the command sort with no arguments
+2. A subprocess with standard input, output, and error being the file descriptors numbered 1, 3, and 6. This subprocess runs the command cat with the two arguments b and -.
+3. A subprocess with standard, standard, and error being the file descriptors numberd 4, 5, and 6 above. This subprocess runs the command tr with the two arguments A-Z and a-z.
+
+It then waits for all three subprocesses to finish. As each finishes, it prints its exit status, followed by the command and arguments. The output might look like this:
+
+```
+0 sort
+0 cat b -
+0 tr A-Z a-z
+```
+
+although not necessarily in that order, depending on which order the subprocesses finished.
